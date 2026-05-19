@@ -579,7 +579,7 @@ SlashCmdList["WFEXPORTCONTRIB"] = function(arg)
         local merged = AtlasLootWF_GetItemData(itemID) or data
         local locs = {}
         for _, loc in ipairs(merged.locations or {}) do
-            if loc.zone ~= "Localisation inconnue" then
+            if loc.zone ~= "Unknown location" then
                 table.insert(locs, { zone=loc.zone, x=loc.x, y=loc.y, c=loc.c, z=loc.z })
             end
         end
@@ -887,7 +887,7 @@ local function StartupBagScan()
         local db = AtlasLootWorldforgedDB and AtlasLootWorldforgedDB.items
         if not db then return end
         local tt       = GetScanner()
-        local location = { zone = "Localisation inconnue", subzone = "", x = 0, y = 0, c = 0, z = 0 }
+        local location = { zone = "Unknown location", subzone = "", x = 0, y = 0, c = 0, z = 0 }
         local found    = 0
 
         for bag = 0, 4 do
@@ -978,7 +978,7 @@ local function ScanRPGItemStore()
                                     name      = bName or name,
                                     slot      = bSlot,
                                     expansion = "CLASSIC",
-                                    locations = {},  -- base trouvée en sac : localisation inconnue
+                                    locations = {},  -- base found in bags: unknown location
                                     upgradeID = id,
                                 }
                                 DEFAULT_CHAT_FRAME:AddMessage("|cff00ff66[WF]|r  └ base en sac: ["..(bName or name).."] ("..bagBaseID..")")
