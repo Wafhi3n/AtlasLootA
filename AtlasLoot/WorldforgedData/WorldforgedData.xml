@@ -1,0 +1,23 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.blizzard.com/wow/ui/ ..\FrameXML\UI.xsd">
+
+    <Script file="_init.lua"/>
+
+    <!-- =====================================================
+         CONTRIBUTIONS JOUEURS — BASE DE DONNÉES WORLDFORGED
+         =====================================================
+         Pour contribuer vos découvertes :
+           1. En jeu : /wfexportcontrib
+           2. /reload pour sauvegarder les SavedVariables
+           3. Ouvrir AtlasLoot.lua dans WTF/Account/.../SavedVariables/
+           4. Copier le bloc AtlasLootWF_ContribExport = { ... }
+           5. Créer WorldforgedData/VOTRENOM.lua avec ce contenu,
+              en remplaçant la 1ère ligne par :
+                AtlasLootWF_Contribs["VOTRENOM"] = {
+           6. Ajouter la ligne <Script file="VOTRENOM.lua"/> ci-dessous
+           7. Git commit + Pull Request
+    -->
+
+    <Script file="WAFHI3N.lua"/>
+
+</Ui>

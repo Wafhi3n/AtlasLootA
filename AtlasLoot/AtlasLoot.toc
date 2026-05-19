@@ -26,7 +26,7 @@
 ## RealTitle-zhCN: [地图]副本掉落物品查询
 ## RealTitle-zhTW: [地圖]AL 物品掉落[主程式]
 ## Notes-ruRU: Отображает весю возможную добычу с боссов
-## SavedVariables: AtlasLootOptions, AtlasLootDB, AtlasLootWishList, AtlasLootFilterDB
+## SavedVariables: AtlasLootOptions, AtlasLootDB, AtlasLootWishList, AtlasLootFilterDB, AtlasLootWorldforgedDB, AtlasLootWF_LogBuffer, AtlasLootWF_ExportBuffer, AtlasLootWF_ContribExport
 ## SavedVariablesPerCharacter: AtlasLootCharDB
 
 embeds.xml

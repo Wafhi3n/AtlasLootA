@@ -17,6 +17,7 @@ AtlasLoot_Modules = {
 	{AL["Ascension Vanity Collection"], "CollectionsAscension"},
 	{AL["Reputation Factions"], "Reputations"},
 	{AL["World Events"], "WorldEvents"},
+	{AL["Worldforged"], "Worldforged"},
 }
 
 AtlasLoot_SubMenus = {}

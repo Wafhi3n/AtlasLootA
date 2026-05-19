@@ -54,6 +54,7 @@ if AL then
 	AL["Show Normal Loot"] = true
 	AL["Show Heroic/Ascended Loot"] = true
 	AL["Bloodforged"] = true
+	AL["Worldforged"] = true
 	AL["Factions - Original WoW"] = true
 	AL["Factions - Classic"] = true
 	AL["Factions - Burning Crusade"] = true

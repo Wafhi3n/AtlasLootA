@@ -352,6 +352,38 @@ function AtlasLoot:ItemContextMenu(data, Type, recipeData)
             }}
         end
     end
-    self:OpenDewdropMenu(data, menuList, wishList, wayPointList)
+
+    -- Worldforged waypoints (DB statique + SavedVariables)
+    local wfWayPointList
+    if self.TomTomLoaded and itemID then
+        local wfData = type(AtlasLootWF_GetItemData) == "function" and AtlasLootWF_GetItemData(itemID)
+        if wfData and wfData.locations and #wfData.locations > 0 then
+            local itemName = wfData.name or "Worldforged"
+            local entries = {
+                { text = "|cff00ff66Worldforged|r – Waypoints TomTom", isTitle = true },
+            }
+            for _, loc in ipairs(wfData.locations) do
+                local coords = (loc.x > 0 or loc.y > 0)
+                               and " (" .. loc.x .. ", " .. loc.y .. ")" or ""
+                local locCopy = loc
+                table.insert(entries, {
+                    text = loc.zone .. coords,
+                    func = function()
+                        local c = locCopy.c or 0
+                        local z = locCopy.z or 0
+                        if c > 0 and z > 0 then
+                            TomTom:AddZWaypoint(c, z, locCopy.x, locCopy.y, itemName)
+                            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff66[WF]|r Waypoint: " .. locCopy.zone .. " (" .. locCopy.x .. ", " .. locCopy.y .. ")")
+                        else
+                            DEFAULT_CHAT_FRAME:AddMessage("|cffff6600[WF]|r Pas d'Area ID pour: " .. locCopy.zone)
+                        end
+                    end,
+                })
+            end
+            wfWayPointList = { [1] = entries }
+        end
+    end
+
+    self:OpenDewdropMenu(data, menuList, wishList, wayPointList, wfWayPointList)
 end
 

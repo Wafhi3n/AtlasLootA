@@ -19,5 +19,7 @@
 	<Script file="ProfessionUtils.lua"/>
     <Script file="ItemFrame.lua"/>
 	<Script file="Skin.lua"/>
+	<Script file="WorldforgedDB.lua"/>
+	<Script file="WorldforgedTracker.lua"/>
 </Ui>
 

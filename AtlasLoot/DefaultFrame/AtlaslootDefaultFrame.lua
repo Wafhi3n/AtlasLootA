@@ -73,6 +73,19 @@ function AtlasLoot:DewDropClick(tablename, text, tablenum)
     tablename = tablename .. self.Expac
     self.currentTable = tablename
     tablenum = tablenum or 1
+    if not AtlasLoot_SubMenus[tablename] then
+        -- Tentative de reconstruction à la volée (ex: Worldforged)
+        if type(AtlasLoot_BuildWorldforgedTables) == "function" and tablename:find("^Worldforged") then
+            local ok, err = pcall(AtlasLoot_BuildWorldforgedTables)
+            if not ok then
+                DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[AtlasLoot]|r Erreur rebuild: " .. tostring(err))
+            end
+        end
+        if not AtlasLoot_SubMenus[tablename] then
+            DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[AtlasLoot]|r SubMenu '" .. tostring(tablename) .. "' introuvable. Faites /reload.")
+            return
+        end
+    end
     self.lastModule = AtlasLoot_SubMenus[tablename].Module
     self.mainUI.moduelMenuButton:SetText(text)
     self:IsLootTableAvailable(AtlasLoot_SubMenus[tablename].Module)
