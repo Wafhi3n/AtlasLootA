@@ -1,0 +1,8 @@
+## Interface: 30300
+## Title: AtlasLoot Worldforged
+## Notes: Adds Worldforged item locations using LootCollector community data
+## Author: (auto-generated)
+## Version: 1.0.0
+## Dependencies: AtlasLoot, LootCollector
+
+AtlasLoot_Worldforged.lua
