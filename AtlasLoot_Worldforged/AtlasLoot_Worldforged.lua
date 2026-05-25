@@ -6,10 +6,10 @@
 -- Architecture:
 --   Phase 1 (file scope)  : register top-level menu + placeholder sub-menus.
 --   Phase 2 (PLAYER_LOGIN + 1 s) : read LootCollector DB, group items by
---     (expansion, slot), build one AtlasLoot_Data entry per slot/expansion
---     where each PAGE = one zone (shown in the right-hand sidebar).
+--     (expansion, slot), sort by item level desc, all zones merged in one
+--     flat paginated list.  Zone name shown as desc on each item button.
 --     Category dropdown  = equipment slot  (Head, Chest, Neck ...)
---     Right sidebar      = zones           (Alterac Mountains, Durotar ...)
+--     Right sidebar      = page numbers only (Page 1, Page 2 ...)
 -------------------------------------------------------------------------------
 
 local ADDON_NAME = "AtlasLoot_Worldforged"
@@ -64,40 +64,34 @@ local SLOT_ORDER = {
 -------------------------------------------------------------------------------
 
 -- Build one AtlasLoot_Data entry for a slot/expansion.
--- zoneItems = { [zoneName] = { itemID, itemID, ... } }
--- Each zone becomes one (or more) pages in the right-hand sidebar.
-local function BuildSlotEntry(slotName, zoneItems)
-    local entry = { Module = ADDON_NAME, Name = slotName }
+-- flatItems = { { id=itemID, ilvl=N, zone=zoneName }, ... } already deduped.
+-- Items are sorted by ilvl descending; zone shown as desc on each button.
+-- Right sidebar shows "Page 1", "Page 2", etc.
+local function BuildSlotEntry(slotName, flatItems)
+    -- Sort by ilvl descending; uncached items (ilvl=0) fall to the bottom
+    table.sort(flatItems, function(a, b)
+        if a.ilvl ~= b.ilvl then return a.ilvl > b.ilvl end
+        return a.id < b.id
+    end)
 
-    local sortedZones = {}
-    for zoneName in pairs(zoneItems) do
-        sortedZones[#sortedZones + 1] = zoneName
-    end
-    table.sort(sortedZones)
-
-    for _, zoneName in ipairs(sortedZones) do
-        local ids = zoneItems[zoneName]
-        table.sort(ids)
-
-        -- Split into pages of 32 (16 left + 16 right) if a zone has many items
-        local pageOffset = 0
-        local pageIdx    = 0
-        while pageOffset < #ids do
-            pageIdx = pageIdx + 1
-            local leftCol, rightCol = {}, {}
-            for j = 0, 31 do
-                local id = ids[pageOffset + j + 1]
-                if not id then break end
-                if j < 16 then
-                    leftCol[#leftCol + 1]  = { itemID = id }
-                else
-                    rightCol[#rightCol + 1] = { itemID = id }
-                end
+    local entry    = { Module = ADDON_NAME, Name = slotName }
+    local pageNum  = 0
+    local i        = 1
+    while i <= #flatItems do
+        pageNum = pageNum + 1
+        local leftCol, rightCol = {}, {}
+        for j = 0, 31 do
+            local item = flatItems[i + j]
+            if not item then break end
+            local btn = { itemID = item.id, desc = "|cff00ccff" .. item.zone }
+            if j < 16 then
+                leftCol[#leftCol + 1]  = btn
+            else
+                rightCol[#rightCol + 1] = btn
             end
-            local pageName = (pageIdx == 1) and zoneName or (zoneName .. " " .. pageIdx)
-            entry[#entry + 1] = { Name = pageName, leftCol, rightCol }
-            pageOffset = pageOffset + 32
         end
+        entry[#entry + 1] = { Name = "Page " .. pageNum, leftCol, rightCol }
+        i = i + 32
     end
     return entry
 end
@@ -148,9 +142,9 @@ frame:SetScript("OnEvent", function()
         end
         local mapData = zoneListModule.MapDataByID
 
-        -- bySlotExp[expansion][slot][zoneName] = { itemID, ... }
+        -- bySlotExp[expansion][slot] = { {id, ilvl, zone}, ... } flat list
         local bySlotExp = { CLASSIC = {}, TBC = {}, WRATH = {} }
-        local seen = {}  -- dedup key: "expansion:slot:zoneName:itemID"
+        local seen = {}  -- dedup key: "expansion:slot:itemID" (one entry per item)
 
         for _, disc in pairs(discoveries) do
             if disc.dt == DISCOVERY_TYPE_WORLDFORGED and disc.st ~= "STALE" then
@@ -162,18 +156,20 @@ frame:SetScript("OnEvent", function()
                     local contID    = zoneInfo and zoneInfo.continentID
                     local expansion = CONTINENT_TO_EXPANSION[contID] or "CLASSIC"
 
-                    -- Resolve slot via GetItemInfo (cached items only; nil -> "Other")
-                    local _, _, _, _, _, _, _, _, equipSlot = GetItemInfo(itemID)
+                    -- Resolve slot + ilvl via GetItemInfo (cached items only)
+                    local _, _, _, iLevel, _, _, _, _, equipSlot = GetItemInfo(itemID)
                     local slot = (equipSlot and SLOT_CATEGORY[equipSlot]) or "Other"
+                    local ilvl = iLevel or 0
 
-                    local key = expansion .. ":" .. slot .. ":" .. zoneName .. ":" .. itemID
+                    -- Dedup per (expansion, slot, itemID) — same item can appear in multiple zones,
+                    -- keep the first occurrence for the zone label
+                    local key = expansion .. ":" .. slot .. ":" .. itemID
                     if not seen[key] then
                         seen[key] = true
                         local expBucket = bySlotExp[expansion]
                         expBucket[slot] = expBucket[slot] or {}
-                        expBucket[slot][zoneName] = expBucket[slot][zoneName] or {}
-                        local t = expBucket[slot][zoneName]
-                        t[#t + 1] = itemID
+                        local t = expBucket[slot]
+                        t[#t + 1] = { id = itemID, ilvl = ilvl, zone = zoneName }
                     end
                 end
             end
@@ -194,10 +190,10 @@ frame:SetScript("OnEvent", function()
 
             -- Iterate in SLOT_ORDER for a consistent menu order
             for _, slot in ipairs(SLOT_ORDER) do
-                local zoneItems = slotData[slot]
-                if zoneItems then
+                local flatItems = slotData[slot]
+                if flatItems and #flatItems > 0 then
                     local dataKey = "WF_" .. slot:gsub("[^%w]", "_") .. "_" .. expansion
-                    AtlasLoot_Data[dataKey] = BuildSlotEntry(slot, zoneItems)
+                    AtlasLoot_Data[dataKey] = BuildSlotEntry(slot, flatItems)
                     rows[#rows + 1] = { slot, dataKey, "" }
                     totalSlots = totalSlots + 1
                 end
