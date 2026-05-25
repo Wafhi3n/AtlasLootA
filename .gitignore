@@ -1,0 +1,14 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+*.swp
+*~
+
+# Deployed copy (ne pas versionner les fichiers du jeu)
+D:/
+
+# Logs
+*.log
