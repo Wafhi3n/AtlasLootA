@@ -4,79 +4,108 @@
 -- community discovery data from LootCollector (hard dependency).
 --
 -- Architecture:
---   Phase 1 (file scope) : register the top-level menu category and
---                          placeholder sub-menus so AtlasLoot can draw
---                          the sidebar before the DB is queried.
---   Phase 2 (PLAYER_LOGIN + 1 s delay) : read LootCollector's per-realm
---                          discoveries table, build AtlasLoot_Data entries
---                          grouped by zone, then replace the placeholders
---                          with real entries.
+--   Phase 1 (file scope)  : register top-level menu + placeholder sub-menus.
+--   Phase 2 (PLAYER_LOGIN + 1 s) : read LootCollector DB, group items by
+--     (expansion, slot), build one AtlasLoot_Data entry per slot/expansion
+--     where each PAGE = one zone (shown in the right-hand sidebar).
+--     Category dropdown  = equipment slot  (Head, Chest, Neck ...)
+--     Right sidebar      = zones           (Alterac Mountains, Durotar ...)
 -------------------------------------------------------------------------------
 
 local ADDON_NAME = "AtlasLoot_Worldforged"
 
--- LootCollector discovery-type constant (Constants.lua)
+-- LootCollector discovery-type constant
 local DISCOVERY_TYPE_WORLDFORGED = 1
 
--- ContinentID → AtlasLoot expansion key
--- (LootCollector ZoneList: 1=Kalimdor, 2=EasternKingdoms, 3=Outland, 4=Northrend)
+-- ContinentID -> AtlasLoot expansion key
 local CONTINENT_TO_EXPANSION = {
-    [1] = "CLASSIC",
-    [2] = "CLASSIC",
-    [3] = "TBC",
-    [4] = "WRATH",
+    [1] = "CLASSIC",   -- Kalimdor
+    [2] = "CLASSIC",   -- Eastern Kingdoms
+    [3] = "TBC",       -- Outland
+    [4] = "WRATH",     -- Northrend
 }
 
--- Sanitise a zone name into a safe Lua table key
-local function SafeKey(name)
-    return name:gsub("[^%w]", "_")
-end
+-- INVTYPE_* -> readable slot category
+local SLOT_CATEGORY = {
+    INVTYPE_HEAD           = "Head",
+    INVTYPE_NECK           = "Neck",
+    INVTYPE_SHOULDER       = "Shoulder",
+    INVTYPE_CHEST          = "Chest",
+    INVTYPE_ROBE           = "Chest",
+    INVTYPE_WAIST          = "Waist",
+    INVTYPE_LEGS           = "Legs",
+    INVTYPE_FEET           = "Feet",
+    INVTYPE_WRIST          = "Wrist",
+    INVTYPE_HAND           = "Hands",
+    INVTYPE_FINGER         = "Ring",
+    INVTYPE_TRINKET        = "Trinket",
+    INVTYPE_BACK           = "Back",
+    INVTYPE_CLOAK          = "Back",
+    INVTYPE_WEAPON         = "Weapon",
+    INVTYPE_WEAPONMAINHAND = "Weapon",
+    INVTYPE_2HWEAPON       = "Weapon",
+    INVTYPE_WEAPONOFFHAND  = "Off-Hand",
+    INVTYPE_SHIELD         = "Off-Hand",
+    INVTYPE_HOLDABLE       = "Off-Hand",
+    INVTYPE_RANGED         = "Ranged",
+    INVTYPE_THROWN         = "Ranged",
+    INVTYPE_RANGEDRIGHT    = "Ranged",
+}
 
--- Build one AtlasLoot_Data entry for a list of itemIDs.
--- Items are split into pages of 32 (16 left column + 16 right column).
-local function BuildDataEntry(zoneName, itemIDs)
-    local entry = {
-        Module = ADDON_NAME,
-        Name   = zoneName,
-    }
-    local pageNum  = 0
-    local leftCol, rightCol
-    for i, itemID in ipairs(itemIDs) do
-        local pos = (i - 1) % 32
-        if pos == 0 then
-            pageNum = pageNum + 1
-            leftCol  = {}
-            rightCol = {}
-            entry[pageNum] = { Name = zoneName .. " " .. pageNum, leftCol, rightCol }
-        end
-        if pos < 16 then
-            leftCol[#leftCol + 1]   = { itemID = itemID }
-        else
-            rightCol[#rightCol + 1] = { itemID = itemID }
+-- Ordered slot list for consistent sub-menu display
+local SLOT_ORDER = {
+    "Head", "Neck", "Shoulder", "Back", "Chest",
+    "Wrist", "Hands", "Waist", "Legs", "Feet",
+    "Ring", "Trinket", "Weapon", "Off-Hand", "Ranged", "Other",
+}
+
+-------------------------------------------------------------------------------
+-- Helpers
+-------------------------------------------------------------------------------
+
+-- Build one AtlasLoot_Data entry for a slot/expansion.
+-- zoneItems = { [zoneName] = { itemID, itemID, ... } }
+-- Each zone becomes one (or more) pages in the right-hand sidebar.
+local function BuildSlotEntry(slotName, zoneItems)
+    local entry = { Module = ADDON_NAME, Name = slotName }
+
+    local sortedZones = {}
+    for zoneName in pairs(zoneItems) do
+        sortedZones[#sortedZones + 1] = zoneName
+    end
+    table.sort(sortedZones)
+
+    for _, zoneName in ipairs(sortedZones) do
+        local ids = zoneItems[zoneName]
+        table.sort(ids)
+
+        -- Split into pages of 32 (16 left + 16 right) if a zone has many items
+        local pageOffset = 0
+        local pageIdx    = 0
+        while pageOffset < #ids do
+            pageIdx = pageIdx + 1
+            local leftCol, rightCol = {}, {}
+            for j = 0, 31 do
+                local id = ids[pageOffset + j + 1]
+                if not id then break end
+                if j < 16 then
+                    leftCol[#leftCol + 1]  = { itemID = id }
+                else
+                    rightCol[#rightCol + 1] = { itemID = id }
+                end
+            end
+            local pageName = (pageIdx == 1) and zoneName or (zoneName .. " " .. pageIdx)
+            entry[#entry + 1] = { Name = pageName, leftCol, rightCol }
+            pageOffset = pageOffset + 32
         end
     end
     return entry
 end
 
--- Build one AtlasLoot_SubMenus entry from a sorted list of { displayName, dataKey } pairs.
-local function BuildSubMenu(subMenuKey, header, zoneList)
-    local t = {
-        Module  = ADDON_NAME,
-        SubMenu = subMenuKey,
-        { header, "", "Header" },
-    }
-    for _, entry in ipairs(zoneList) do
-        -- { displayName, dataKey, mapName }
-        t[#t + 1] = { entry[1], entry[2], "" }
-    end
-    return t
-end
-
 -------------------------------------------------------------------------------
--- Phase 1 — register menus at file-scope load time
+-- Phase 1 — register menus at file-scope (after AtlasLoot + LootCollector load)
 -------------------------------------------------------------------------------
 
--- Add "Worldforged" as a top-level category with expansion tabs (flag = 2).
 -- AtlasLoot_Modules is iterated with ipairs so table.insert is safe.
 table.insert(AtlasLoot_Modules, { "Worldforged", "Worldforged", 2 })
 
@@ -98,13 +127,12 @@ AtlasLoot_SubMenus["WorldforgedWRATH"] = {
 }
 
 -------------------------------------------------------------------------------
--- Phase 2 — read LootCollector DB after PLAYER_LOGIN
+-- Phase 2 — build data from LootCollector after PLAYER_LOGIN
 -------------------------------------------------------------------------------
 
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:SetScript("OnEvent", function()
-    -- Delay 1 second so LootCollector can finish merging its bundled discoveries.
     C_Timer.After(1, function()
 
         local discoveries = LootCollector:GetDiscoveriesDB()
@@ -120,88 +148,80 @@ frame:SetScript("OnEvent", function()
         end
         local mapData = zoneListModule.MapDataByID
 
-        -- Accumulate: byExpansion[expansion][zoneName] = { itemID = true, ... }
-        local byExpansion = {
-            CLASSIC = {},
-            TBC     = {},
-            WRATH   = {},
-        }
+        -- bySlotExp[expansion][slot][zoneName] = { itemID, ... }
+        local bySlotExp = { CLASSIC = {}, TBC = {}, WRATH = {} }
+        local seen = {}  -- dedup key: "expansion:slot:zoneName:itemID"
 
         for _, disc in pairs(discoveries) do
-            -- Only Worldforged, skip Stale entries
             if disc.dt == DISCOVERY_TYPE_WORLDFORGED and disc.st ~= "STALE" then
                 local zoneID = disc.z
                 local itemID = disc.i
-
                 if zoneID and itemID then
-                    local zoneInfo   = mapData[zoneID]
-                    local zoneName   = zoneInfo and zoneInfo.name or ("Zone_" .. zoneID)
-                    local contID     = zoneInfo and zoneInfo.continentID
-                    local expansion  = CONTINENT_TO_EXPANSION[contID] or "CLASSIC"
+                    local zoneInfo  = mapData[zoneID]
+                    local zoneName  = zoneInfo and zoneInfo.name or ("Zone_" .. zoneID)
+                    local contID    = zoneInfo and zoneInfo.continentID
+                    local expansion = CONTINENT_TO_EXPANSION[contID] or "CLASSIC"
 
-                    local expBucket = byExpansion[expansion]
-                    if not expBucket[zoneName] then
-                        expBucket[zoneName] = {}
+                    -- Resolve slot via GetItemInfo (cached items only; nil -> "Other")
+                    local _, _, _, _, _, _, _, _, equipSlot = GetItemInfo(itemID)
+                    local slot = (equipSlot and SLOT_CATEGORY[equipSlot]) or "Other"
+
+                    local key = expansion .. ":" .. slot .. ":" .. zoneName .. ":" .. itemID
+                    if not seen[key] then
+                        seen[key] = true
+                        local expBucket = bySlotExp[expansion]
+                        expBucket[slot] = expBucket[slot] or {}
+                        expBucket[slot][zoneName] = expBucket[slot][zoneName] or {}
+                        local t = expBucket[slot][zoneName]
+                        t[#t + 1] = itemID
                     end
-                    -- deduplicate by itemID within this zone
-                    expBucket[zoneName][itemID] = true
                 end
             end
         end
 
-        -- Build AtlasLoot_Data entries and collect submenu rows per expansion
-        local subRows = { CLASSIC = {}, TBC = {}, WRATH = {} }
-
-        for expansion, zones in pairs(byExpansion) do
-            -- Collect and sort zone names
-            local sortedZones = {}
-            for zoneName in pairs(zones) do
-                sortedZones[#sortedZones + 1] = zoneName
-            end
-            table.sort(sortedZones)
-
-            for _, zoneName in ipairs(sortedZones) do
-                local itemSet = zones[zoneName]
-                -- Convert set to sorted array
-                local itemIDs = {}
-                for itemID in pairs(itemSet) do
-                    itemIDs[#itemIDs + 1] = itemID
-                end
-                table.sort(itemIDs)
-
-                if #itemIDs > 0 then
-                    local dataKey = "WF_" .. SafeKey(zoneName)
-                    AtlasLoot_Data[dataKey] = BuildDataEntry(zoneName, itemIDs)
-                    subRows[expansion][#subRows[expansion] + 1] = { zoneName, dataKey }
-                end
-            end
-        end
-
-        -- Replace placeholder sub-menus with populated ones
-        local headers = {
-            CLASSIC = "Classic Zones",
-            TBC     = "Outland Zones",
-            WRATH   = "Northrend Zones",
+        -- Build AtlasLoot_Data + SubMenu entries per expansion
+        local expHeaders = {
+            CLASSIC = "Classic Slots",
+            TBC     = "Outland Slots",
+            WRATH   = "Northrend Slots",
         }
+
+        local totalSlots = 0
         for _, expansion in ipairs({ "CLASSIC", "TBC", "WRATH" }) do
-            local key  = "Worldforged" .. expansion
-            local rows = subRows[expansion]
+            local subMenuKey = "Worldforged" .. expansion
+            local slotData   = bySlotExp[expansion]
+            local rows       = {}
+
+            -- Iterate in SLOT_ORDER for a consistent menu order
+            for _, slot in ipairs(SLOT_ORDER) do
+                local zoneItems = slotData[slot]
+                if zoneItems then
+                    local dataKey = "WF_" .. slot:gsub("[^%w]", "_") .. "_" .. expansion
+                    AtlasLoot_Data[dataKey] = BuildSlotEntry(slot, zoneItems)
+                    rows[#rows + 1] = { slot, dataKey, "" }
+                    totalSlots = totalSlots + 1
+                end
+            end
+
             if #rows > 0 then
-                AtlasLoot_SubMenus[key] = BuildSubMenu(key, headers[expansion], rows)
-            else
-                AtlasLoot_SubMenus[key] = {
+                local t = {
                     Module  = ADDON_NAME,
-                    SubMenu = key,
+                    SubMenu = subMenuKey,
+                    { expHeaders[expansion], "", "Header" },
+                }
+                for _, row in ipairs(rows) do t[#t + 1] = row end
+                AtlasLoot_SubMenus[subMenuKey] = t
+            else
+                AtlasLoot_SubMenus[subMenuKey] = {
+                    Module  = ADDON_NAME,
+                    SubMenu = subMenuKey,
                     { "No Worldforged data for this expansion", "", "Header" },
                 }
             end
         end
 
-        -- Brief confirmation in chat (remove if too noisy)
-        local total = 0
-        for _, rows in pairs(subRows) do total = total + #rows end
         DEFAULT_CHAT_FRAME:AddMessage(
-            "|cff00ccffAtlasLoot Worldforged:|r " .. total .. " zones loaded from LootCollector."
+            "|cff00ccffAtlasLoot Worldforged:|r " .. totalSlots .. " slot categories loaded from LootCollector."
         )
 
     end)  -- C_Timer.After
